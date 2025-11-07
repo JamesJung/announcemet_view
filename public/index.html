@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>공고 조회 시스템</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <!-- 헤더 -->
+    <header class="header">
+      <h1>공고 사전처리 데이터 조회</h1>
+      <div class="header-info">
+        <span id="totalCount">전체: 0건</span>
+        <button id="refreshBtn" class="btn btn-secondary">새로고침</button>
+      </div>
+    </header>
+
+    <!-- 로딩 인디케이터 -->
+    <div id="loadingIndicator" class="loading-indicator hidden">
+      <div class="spinner"></div>
+      <p>데이터를 불러오는 중...</p>
+    </div>
+
+    <!-- 에러 메시지 -->
+    <div id="errorMessage" class="error-message hidden"></div>
+
+    <!-- 검색 폼 -->
+    <div class="search-form-container">
+      <form id="searchForm" class="search-form">
+        <!-- 첫 번째 줄 -->
+        <div class="search-row">
+          <div class="search-field">
+            <label for="searchTitle">제목</label>
+            <input
+              type="text"
+              id="searchTitle"
+              class="form-control"
+              placeholder="제목 검색"
+            />
+          </div>
+
+          <div class="search-field">
+            <label for="searchSiteType">사이트 유형</label>
+            <select id="searchSiteType" class="form-control">
+              <option value="">전체</option>
+              <option value="api_scrap">api_scrap</option>
+              <option value="Eminwon">Eminwon</option>
+              <option value="Homepage">Homepage</option>
+              <option value="Scraper">Scraper</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 두 번째 줄 -->
+        <div class="search-row">
+          <div class="search-field">
+            <label for="searchDateType">날짜 타입</label>
+            <select id="searchDateType" class="form-control">
+              <option value="">선택 안함</option>
+              <option value="created">생성일 (created_at)</option>
+              <option value="announcement">공고일 (announcement_date)</option>
+            </select>
+          </div>
+
+          <div class="search-field">
+            <label>날짜 범위</label>
+            <div class="date-range">
+              <input type="date" id="searchDateFrom" class="form-control" />
+              <span class="date-separator">~</span>
+              <input type="date" id="searchDateTo" class="form-control" />
+            </div>
+          </div>
+
+          <div class="search-buttons-inline">
+            <button type="submit" class="btn btn-primary">검색</button>
+            <button type="button" id="resetBtn" class="btn btn-secondary">초기화</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <!-- 공고 테이블 -->
+    <div class="table-container">
+      <table id="announcementTable" class="announcement-table">
+        <thead>
+          <tr>
+            <th>사이트 유형</th>
+            <th>사이트 코드</th>
+            <th>제목</th>
+            <th>원본 URL</th>
+            <th>공고일자</th>
+            <th>상세</th>
+            <th>등록 상태</th>
+            <th>작업</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <!-- 데이터가 여기에 동적으로 추가됩니다 -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 페이지네이션 -->
+    <div class="pagination" id="pagination">
+      <!-- 페이지네이션 버튼이 여기에 동적으로 추가됩니다 -->
+    </div>
+  </div>
+
+  <!-- 제외 키워드 등록 모달 -->
+  <div id="keywordModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>제외 키워드 등록</h2>
+        <button class="modal-close" id="modalCloseBtn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="keywordInput">제외 키워드 *</label>
+          <input
+            type="text"
+            id="keywordInput"
+            class="form-control"
+            placeholder="제외할 키워드를 입력하세요 (예: 특허, 연구과제 등)"
+            maxlength="100"
+          />
+          <small class="form-text">키워드를 입력하고 '찾기' 버튼을 클릭하면 해당 키워드가 포함된 공고를 검색합니다.</small>
+        </div>
+
+        <div class="form-group">
+          <label for="descriptionInput">설명 (선택사항)</label>
+          <textarea
+            id="descriptionInput"
+            class="form-control"
+            placeholder="키워드에 대한 설명을 입력하세요"
+            rows="3"
+          ></textarea>
+        </div>
+
+        <!-- 검색 결과 -->
+        <div class="search-results" id="searchResultsSection">
+          <div class="search-results-header">
+            <h3>검색 결과</h3>
+            <span id="searchResultCount" class="result-count"></span>
+          </div>
+          <div id="searchResultsList" class="search-list">
+            <div class="empty-message">키워드를 입력하고 '찾기' 버튼을 클릭하세요.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="cancelBtn" class="btn btn-secondary">취소</button>
+        <button id="searchBtn" class="btn btn-search">찾기</button>
+        <button id="registerBtn" class="btn btn-primary">등록</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 공고 상세 모달 -->
+  <div id="detailModal" class="modal hidden">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2>공고 상세 정보</h2>
+        <button class="modal-close" id="detailModalCloseBtn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="detail-info">
+          <h3 id="detailTitle"></h3>
+          <div class="detail-meta">
+            <span id="detailSiteInfo"></span>
+            <span id="detailDate"></span>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h4>Content MD</h4>
+          <div id="detailContentMd" class="detail-content">
+            <!-- content_md가 여기에 표시됩니다 -->
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h4>Combined Content</h4>
+          <div id="detailCombinedContent" class="detail-content">
+            <!-- combined_content가 여기에 표시됩니다 -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="detailCloseBtn" class="btn btn-secondary">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUBVENTION_MASTER 조회 모달 -->
+  <div id="subventionModal" class="modal hidden">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2>SUBVENTION_MASTER 정보</h2>
+        <button class="modal-close" id="subventionModalCloseBtn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div id="subventionData" class="subvention-data">
+          <!-- SUBVENTION_MASTER 데이터가 여기에 표시됩니다 -->
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="subventionCloseBtn" class="btn btn-secondary">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 성공 알림 토스트 -->
+  <div id="toast" class="toast hidden">
+    <span id="toastMessage"></span>
+  </div>
+
+  <script src="/js/script.js"></script>
+</body>
+</html>
