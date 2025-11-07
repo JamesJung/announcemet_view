@@ -398,4 +398,41 @@ router.get('/exclusion-keywords', async (req, res) => {
   }
 });
 
+/**
+ * DELETE /api/exclusion-keywords/:id
+ * 제외 키워드 삭제 (IS_ACTIVE를 0으로 변경)
+ */
+router.delete('/exclusion-keywords/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const query = `
+      UPDATE EXCLUSION_KEYWORDS
+      SET IS_ACTIVE = 0
+      WHERE EXCLUSION_ID = ?
+    `;
+
+    const [result] = await req.db.query(query, [id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '제외 키워드를 찾을 수 없습니다.'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: '제외 키워드가 성공적으로 삭제되었습니다.'
+    });
+  } catch (error) {
+    console.error('키워드 삭제 실패:', error);
+    res.status(500).json({
+      success: false,
+      message: '키워드 삭제 중 오류가 발생했습니다.',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

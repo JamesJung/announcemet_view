@@ -13,6 +13,7 @@
       <h1>공고 사전처리 데이터 조회</h1>
       <div class="header-info">
         <span id="totalCount">전체: 0건</span>
+        <button id="manageKeywordsBtn" class="btn btn-primary">제외 키워드 관리</button>
         <button id="refreshBtn" class="btn btn-secondary">새로고침</button>
       </div>
     </header>
@@ -203,6 +204,30 @@
 
       <div class="modal-footer">
         <button id="subventionCloseBtn" class="btn btn-secondary">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 제외 키워드 관리 모달 -->
+  <div id="manageKeywordsModal" class="modal hidden">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2>제외 키워드 관리</h2>
+        <button class="modal-close" id="manageKeywordsModalCloseBtn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="keywords-list-header">
+          <h3>등록된 제외 키워드</h3>
+          <span id="keywordsCount" class="result-count"></span>
+        </div>
+        <div id="keywordsList" class="keywords-list">
+          <!-- 제외 키워드 목록이 여기에 표시됩니다 -->
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="manageKeywordsCloseBtn" class="btn btn-secondary">닫기</button>
       </div>
     </div>
   </div>

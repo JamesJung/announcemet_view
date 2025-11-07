@@ -51,6 +51,13 @@ const elements = {
   subventionModalCloseBtn: document.getElementById('subventionModalCloseBtn'),
   subventionCloseBtn: document.getElementById('subventionCloseBtn'),
   subventionData: document.getElementById('subventionData'),
+  // 제외 키워드 관리 모달
+  manageKeywordsBtn: document.getElementById('manageKeywordsBtn'),
+  manageKeywordsModal: document.getElementById('manageKeywordsModal'),
+  manageKeywordsModalCloseBtn: document.getElementById('manageKeywordsModalCloseBtn'),
+  manageKeywordsCloseBtn: document.getElementById('manageKeywordsCloseBtn'),
+  keywordsList: document.getElementById('keywordsList'),
+  keywordsCount: document.getElementById('keywordsCount'),
   // 토스트
   toast: document.getElementById('toast'),
   toastMessage: document.getElementById('toastMessage')
@@ -206,6 +213,46 @@ async function registerExclusionKeyword(keyword) {
     return result;
   } catch (error) {
     console.error('키워드 등록 실패:', error);
+    throw error;
+  }
+}
+
+async function fetchExclusionKeywords() {
+  try {
+    const response = await fetch('/api/exclusion-keywords');
+
+    if (!response.ok) {
+      throw new Error(`HTTP 오류: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.message || '제외 키워드 목록 조회에 실패했습니다.');
+    }
+
+    return result;
+  } catch (error) {
+    console.error('제외 키워드 목록 조회 실패:', error);
+    throw error;
+  }
+}
+
+async function deleteExclusionKeyword(id) {
+  try {
+    const response = await fetch(`/api/exclusion-keywords/${id}`, {
+      method: 'DELETE'
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.message || '제외 키워드 삭제에 실패했습니다.');
+    }
+
+    return result;
+  } catch (error) {
+    console.error('제외 키워드 삭제 실패:', error);
     throw error;
   }
 }
@@ -548,6 +595,85 @@ function closeSubventionModal() {
   elements.subventionModal.classList.add('hidden');
 }
 
+// 제외 키워드 관리 모달 열기
+async function openManageKeywordsModal() {
+  try {
+    // 로딩 표시
+    elements.keywordsList.innerHTML = '<div class="empty-message">로딩 중...</div>';
+    elements.keywordsCount.textContent = '';
+    elements.manageKeywordsModal.classList.remove('hidden');
+
+    // 제외 키워드 목록 조회
+    const result = await fetchExclusionKeywords();
+
+    if (!result.data || result.data.length === 0) {
+      elements.keywordsList.innerHTML = '<div class="empty-message">등록된 제외 키워드가 없습니다.</div>';
+      elements.keywordsCount.textContent = '0건';
+      return;
+    }
+
+    // 개수 표시
+    elements.keywordsCount.textContent = `${result.count}건`;
+
+    // 키워드 목록 렌더링
+    elements.keywordsList.innerHTML = result.data.map(item => {
+      const createdAt = item.CREATED_AT ? new Date(item.CREATED_AT).toLocaleString('ko-KR') : '-';
+      return `
+        <div class="keyword-item">
+          <div class="keyword-item-header">
+            <div class="keyword-item-title">${escapeHtml(item.KEYWORD)}</div>
+            <button class="btn btn-action delete-keyword-btn" data-id="${item.EXCLUSION_ID}" data-keyword="${escapeHtml(item.KEYWORD)}">삭제</button>
+          </div>
+          <div class="keyword-item-meta">
+            등록일: ${createdAt}
+            ${item.EXCLUSION_COUNT ? ` | 제외된 공고: ${item.EXCLUSION_COUNT}건` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // 삭제 버튼 이벤트 리스너 추가
+    document.querySelectorAll('.delete-keyword-btn').forEach(btn => {
+      btn.addEventListener('click', handleDeleteKeyword);
+    });
+  } catch (error) {
+    console.error('제외 키워드 목록 조회 실패:', error);
+    elements.keywordsList.innerHTML = '<div class="empty-message">목록을 불러오는 중 오류가 발생했습니다.</div>';
+    alert(error.message);
+  }
+}
+
+// 제외 키워드 관리 모달 닫기
+function closeManageKeywordsModal() {
+  elements.manageKeywordsModal.classList.add('hidden');
+}
+
+// 제외 키워드 삭제 핸들러
+async function handleDeleteKeyword(event) {
+  const id = event.target.dataset.id;
+  const keyword = event.target.dataset.keyword;
+
+  if (!confirm(`제외 키워드 "${keyword}"를 삭제하시겠습니까?`)) {
+    return;
+  }
+
+  try {
+    event.target.disabled = true;
+    event.target.textContent = '삭제 중...';
+
+    await deleteExclusionKeyword(id);
+
+    showToast('제외 키워드가 삭제되었습니다.');
+
+    // 목록 새로고침
+    await openManageKeywordsModal();
+  } catch (error) {
+    alert(error.message);
+    event.target.disabled = false;
+    event.target.textContent = '삭제';
+  }
+}
+
 // 키워드 등록
 async function handleRegister() {
   const keyword = elements.keywordInput.value.trim();
@@ -634,6 +760,20 @@ function setupEventListeners() {
     }
   });
 
+  // 제외 키워드 관리 버튼
+  elements.manageKeywordsBtn.addEventListener('click', openManageKeywordsModal);
+
+  // 제외 키워드 관리 모달 닫기
+  elements.manageKeywordsModalCloseBtn.addEventListener('click', closeManageKeywordsModal);
+  elements.manageKeywordsCloseBtn.addEventListener('click', closeManageKeywordsModal);
+
+  // 제외 키워드 관리 모달 배경 클릭 시 닫기
+  elements.manageKeywordsModal.addEventListener('click', (e) => {
+    if (e.target === elements.manageKeywordsModal) {
+      closeManageKeywordsModal();
+    }
+  });
+
   // ESC 키로 모든 모달 닫기
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
@@ -645,6 +785,9 @@ function setupEventListeners() {
       }
       if (!elements.subventionModal.classList.contains('hidden')) {
         closeSubventionModal();
+      }
+      if (!elements.manageKeywordsModal.classList.contains('hidden')) {
+        closeManageKeywordsModal();
       }
     }
   });
