@@ -286,18 +286,20 @@ router.post('/exclusion-keywords', async (req, res) => {
     const searchPattern = `%${keyword.trim()}%`;
     const [announcements] = await connection.query(searchQuery, [searchPattern]);
 
-    // 3. announcement_pre_processing의 processing_status를 '제외'로 변경
+    // 3. announcement_pre_processing의 processing_status를 '제외'로 변경하고 exclusion_reason, exclusion_keyword 업데이트
     let updatedAnnouncementCount = 0;
     if (announcements.length > 0) {
       const announcementIds = announcements.map(a => a.id);
 
       const updateAnnouncementQuery = `
         UPDATE announcement_pre_processing
-        SET processing_status = '제외'
+        SET processing_status = '제외',
+            exclusion_keyword = ?,
+            exclusion_reason = '제외 키워드 등록'
         WHERE id IN (?)
       `;
 
-      const [updateAnnouncementResult] = await connection.query(updateAnnouncementQuery, [announcementIds]);
+      const [updateAnnouncementResult] = await connection.query(updateAnnouncementQuery, [keyword.trim(), announcementIds]);
       updatedAnnouncementCount = updateAnnouncementResult.affectedRows;
     }
 

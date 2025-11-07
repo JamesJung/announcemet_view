@@ -35,7 +35,6 @@ const elements = {
   searchBtn: document.getElementById('searchBtn'),
   registerBtn: document.getElementById('registerBtn'),
   keywordInput: document.getElementById('keywordInput'),
-  descriptionInput: document.getElementById('descriptionInput'),
   searchResultsList: document.getElementById('searchResultsList'),
   searchResultCount: document.getElementById('searchResultCount'),
   // 상세 모달
@@ -188,14 +187,14 @@ async function fetchSubventionMaster(sbvtId) {
   }
 }
 
-async function registerExclusionKeyword(keyword, description) {
+async function registerExclusionKeyword(keyword) {
   try {
     const response = await fetch('/api/exclusion-keywords', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ keyword, description })
+      body: JSON.stringify({ keyword })
     });
 
     const result = await response.json();
@@ -414,9 +413,8 @@ function handleReset() {
 function openKeywordModal(announcement) {
   state.selectedAnnouncement = announcement;
 
-  // 입력 필드 초기화
-  elements.keywordInput.value = '';
-  elements.descriptionInput.value = '';
+  // 선택된 제목을 키워드 기본값으로 설정
+  elements.keywordInput.value = announcement.title || '';
 
   // 검색 결과 초기화
   elements.searchResultsList.innerHTML = '<div class="empty-message">키워드를 입력하고 \'찾기\' 버튼을 클릭하세요.</div>';
@@ -553,7 +551,6 @@ function closeSubventionModal() {
 // 키워드 등록
 async function handleRegister() {
   const keyword = elements.keywordInput.value.trim();
-  const description = elements.descriptionInput.value.trim();
 
   if (!keyword) {
     alert('제외 키워드를 입력해주세요.');
@@ -565,7 +562,7 @@ async function handleRegister() {
     elements.registerBtn.disabled = true;
     elements.registerBtn.textContent = '등록 중...';
 
-    const result = await registerExclusionKeyword(keyword, description);
+    const result = await registerExclusionKeyword(keyword);
 
     // 성공 메시지 생성
     let message = `제외 키워드 "${keyword}"가 성공적으로 등록되었습니다.\n\n`;
