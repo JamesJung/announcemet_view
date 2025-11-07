@@ -635,6 +635,10 @@ body {
 }
 
 /* 제외 키워드 관리 */
+.keyword-search-box {
+  margin-bottom: 20px;
+}
+
 .keywords-list-header {
   display: flex;
   justify-content: space-between;

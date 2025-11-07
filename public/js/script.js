@@ -3,6 +3,7 @@ const state = {
   currentPage: 1,
   totalPages: 1,
   selectedAnnouncement: null,
+  allKeywords: [], // 제외 키워드 전체 목록
   filters: {
     title: '',
     site_type: '',
@@ -58,6 +59,7 @@ const elements = {
   manageKeywordsCloseBtn: document.getElementById('manageKeywordsCloseBtn'),
   keywordsList: document.getElementById('keywordsList'),
   keywordsCount: document.getElementById('keywordsCount'),
+  keywordSearchInput: document.getElementById('keywordSearchInput'),
   // 토스트
   toast: document.getElementById('toast'),
   toastMessage: document.getElementById('toastMessage')
@@ -595,47 +597,82 @@ function closeSubventionModal() {
   elements.subventionModal.classList.add('hidden');
 }
 
+// 제외 키워드 목록 렌더링
+function renderKeywordsList(keywords) {
+  if (!keywords || keywords.length === 0) {
+    elements.keywordsList.innerHTML = '<div class="empty-message">검색 결과가 없습니다.</div>';
+    elements.keywordsCount.textContent = '0건';
+    return;
+  }
+
+  // 개수 표시
+  elements.keywordsCount.textContent = `${keywords.length}건`;
+
+  // 키워드 목록 렌더링
+  elements.keywordsList.innerHTML = keywords.map(item => {
+    const createdAt = item.CREATED_AT ? new Date(item.CREATED_AT).toLocaleString('ko-KR') : '-';
+    return `
+      <div class="keyword-item">
+        <div class="keyword-item-header">
+          <div class="keyword-item-title">${escapeHtml(item.KEYWORD)}</div>
+          <button class="btn btn-action delete-keyword-btn" data-id="${item.EXCLUSION_ID}" data-keyword="${escapeHtml(item.KEYWORD)}">삭제</button>
+        </div>
+        <div class="keyword-item-meta">
+          등록일: ${createdAt}
+          ${item.EXCLUSION_COUNT ? ` | 제외된 공고: ${item.EXCLUSION_COUNT}건` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // 삭제 버튼 이벤트 리스너 추가
+  document.querySelectorAll('.delete-keyword-btn').forEach(btn => {
+    btn.addEventListener('click', handleDeleteKeyword);
+  });
+}
+
+// 제외 키워드 검색
+function filterKeywords() {
+  const searchTerm = elements.keywordSearchInput.value.trim().toLowerCase();
+
+  if (!searchTerm) {
+    // 검색어가 없으면 전체 목록 표시
+    renderKeywordsList(state.allKeywords);
+    return;
+  }
+
+  // 검색어로 필터링
+  const filtered = state.allKeywords.filter(item =>
+    item.KEYWORD.toLowerCase().includes(searchTerm)
+  );
+
+  renderKeywordsList(filtered);
+}
+
 // 제외 키워드 관리 모달 열기
 async function openManageKeywordsModal() {
   try {
     // 로딩 표시
     elements.keywordsList.innerHTML = '<div class="empty-message">로딩 중...</div>';
     elements.keywordsCount.textContent = '';
+    elements.keywordSearchInput.value = '';
     elements.manageKeywordsModal.classList.remove('hidden');
 
     // 제외 키워드 목록 조회
     const result = await fetchExclusionKeywords();
 
     if (!result.data || result.data.length === 0) {
+      state.allKeywords = [];
       elements.keywordsList.innerHTML = '<div class="empty-message">등록된 제외 키워드가 없습니다.</div>';
       elements.keywordsCount.textContent = '0건';
       return;
     }
 
-    // 개수 표시
-    elements.keywordsCount.textContent = `${result.count}건`;
+    // 전체 목록 저장
+    state.allKeywords = result.data;
 
-    // 키워드 목록 렌더링
-    elements.keywordsList.innerHTML = result.data.map(item => {
-      const createdAt = item.CREATED_AT ? new Date(item.CREATED_AT).toLocaleString('ko-KR') : '-';
-      return `
-        <div class="keyword-item">
-          <div class="keyword-item-header">
-            <div class="keyword-item-title">${escapeHtml(item.KEYWORD)}</div>
-            <button class="btn btn-action delete-keyword-btn" data-id="${item.EXCLUSION_ID}" data-keyword="${escapeHtml(item.KEYWORD)}">삭제</button>
-          </div>
-          <div class="keyword-item-meta">
-            등록일: ${createdAt}
-            ${item.EXCLUSION_COUNT ? ` | 제외된 공고: ${item.EXCLUSION_COUNT}건` : ''}
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    // 삭제 버튼 이벤트 리스너 추가
-    document.querySelectorAll('.delete-keyword-btn').forEach(btn => {
-      btn.addEventListener('click', handleDeleteKeyword);
-    });
+    // 목록 렌더링
+    renderKeywordsList(state.allKeywords);
   } catch (error) {
     console.error('제외 키워드 목록 조회 실패:', error);
     elements.keywordsList.innerHTML = '<div class="empty-message">목록을 불러오는 중 오류가 발생했습니다.</div>';
@@ -797,6 +834,9 @@ function setupEventListeners() {
 
   // 키워드 등록
   elements.registerBtn.addEventListener('click', handleRegister);
+
+  // 제외 키워드 검색 (실시간)
+  elements.keywordSearchInput.addEventListener('input', filterKeywords);
 
   // 엔터 키로 검색
   elements.keywordInput.addEventListener('keypress', (e) => {
