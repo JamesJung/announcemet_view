@@ -546,7 +546,10 @@ async function loadKeywordsView() {
           </div>
           <div class="keyword-card-footer">
             <small>등록일: ${item.CREATED_AT ? new Date(item.CREATED_AT).toLocaleDateString('ko-KR') : '-'}</small>
-            <button class="btn btn-detail keyword-detail-btn" data-keyword="${escapeHtml(item.KEYWORD)}" data-count="${count}">상세</button>
+            <div class="keyword-card-actions">
+              <button class="btn btn-detail keyword-detail-btn" data-keyword="${escapeHtml(item.KEYWORD)}" data-count="${count}">상세</button>
+              <button class="btn btn-action delete-keyword-card-btn" data-id="${item.EXCLUSION_ID}" data-keyword="${escapeHtml(item.KEYWORD)}">삭제</button>
+            </div>
           </div>
         </div>
       `;
@@ -559,6 +562,11 @@ async function loadKeywordsView() {
         const count = e.target.dataset.count;
         openKeywordDetailModal(keyword, count);
       });
+    });
+
+    // 삭제 버튼 이벤트 리스너
+    document.querySelectorAll('.delete-keyword-card-btn').forEach(btn => {
+      btn.addEventListener('click', handleDeleteKeywordFromCard);
     });
 
     hideLoading();
@@ -959,7 +967,7 @@ function closeKeywordDetailModal() {
   elements.keywordDetailModal.classList.add('hidden');
 }
 
-// 제외 키워드 삭제 핸들러
+// 제외 키워드 삭제 핸들러 (관리 모달용)
 async function handleDeleteKeyword(event) {
   const id = event.target.dataset.id;
   const keyword = event.target.dataset.keyword;
@@ -978,6 +986,37 @@ async function handleDeleteKeyword(event) {
 
     // 목록 새로고침
     await openManageKeywordsModal();
+  } catch (error) {
+    alert(error.message);
+    event.target.disabled = false;
+    event.target.textContent = '삭제';
+  }
+}
+
+// 제외 키워드 삭제 핸들러 (키워드 카드용)
+async function handleDeleteKeywordFromCard(event) {
+  const id = event.target.dataset.id;
+  const keyword = event.target.dataset.keyword;
+
+  if (!confirm(`제외 키워드 "${keyword}"를 삭제하시겠습니까?\n\n해당 키워드로 제외된 공고들이 다시 "성공" 상태로 복원됩니다.`)) {
+    return;
+  }
+
+  try {
+    event.target.disabled = true;
+    event.target.textContent = '삭제 중...';
+
+    const result = await deleteExclusionKeyword(id);
+
+    // 성공 메시지 표시
+    if (result.data && result.data.restoredCount > 0) {
+      showToast(`제외 키워드가 삭제되었습니다. (복원된 공고: ${result.data.restoredCount}건)`);
+    } else {
+      showToast('제외 키워드가 삭제되었습니다.');
+    }
+
+    // 키워드 뷰 새로고침
+    await loadKeywordsView();
   } catch (error) {
     alert(error.message);
     event.target.disabled = false;

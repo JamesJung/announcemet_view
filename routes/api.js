@@ -374,16 +374,53 @@ router.post('/exclusion-keywords', async (req, res) => {
     // 트랜잭션 시작
     await connection.beginTransaction();
 
-    // 1. EXCLUSION_KEYWORDS 테이블에 키워드 등록
-    const insertQuery = `
-      INSERT INTO EXCLUSION_KEYWORDS (KEYWORD, DESCRIPTION, IS_ACTIVE, EXCLUSION_COUNT)
-      VALUES (?, ?, 1, 0)
+    // 1. 기존 키워드 확인
+    const checkQuery = `
+      SELECT EXCLUSION_ID, IS_ACTIVE
+      FROM EXCLUSION_KEYWORDS
+      WHERE KEYWORD = ?
     `;
 
-    const [insertResult] = await connection.query(insertQuery, [
-      keyword.trim(),
-      description || null
-    ]);
+    const [existingKeywords] = await connection.query(checkQuery, [keyword.trim()]);
+
+    let exclusionId;
+
+    if (existingKeywords.length > 0) {
+      const existing = existingKeywords[0];
+
+      if (existing.IS_ACTIVE === 1) {
+        // 이미 활성화된 키워드가 있으면 에러
+        await connection.rollback();
+        return res.status(409).json({
+          success: false,
+          message: '이미 등록된 키워드입니다.'
+        });
+      }
+
+      // IS_ACTIVE = 0인 경우 재활성화
+      const reactivateQuery = `
+        UPDATE EXCLUSION_KEYWORDS
+        SET IS_ACTIVE = 1,
+            DESCRIPTION = ?
+        WHERE EXCLUSION_ID = ?
+      `;
+
+      await connection.query(reactivateQuery, [description || null, existing.EXCLUSION_ID]);
+      exclusionId = existing.EXCLUSION_ID;
+    } else {
+      // 새로운 키워드 등록
+      const insertQuery = `
+        INSERT INTO EXCLUSION_KEYWORDS (KEYWORD, DESCRIPTION, IS_ACTIVE, EXCLUSION_COUNT)
+        VALUES (?, ?, 1, 0)
+      `;
+
+      const [insertResult] = await connection.query(insertQuery, [
+        keyword.trim(),
+        description || null
+      ]);
+
+      exclusionId = insertResult.insertId;
+    }
 
     // 2. 키워드로 공고 검색 (title LIKE)
     const searchQuery = `
@@ -442,7 +479,7 @@ router.post('/exclusion-keywords', async (req, res) => {
       success: true,
       message: '제외 키워드가 성공적으로 등록되었습니다.',
       data: {
-        exclusionId: insertResult.insertId,
+        exclusionId: exclusionId,
         keyword: keyword.trim(),
         affectedAnnouncements: announcements.length,
         updatedAnnouncementCount: updatedAnnouncementCount,
@@ -452,14 +489,6 @@ router.post('/exclusion-keywords', async (req, res) => {
   } catch (error) {
     // 트랜잭션 롤백
     await connection.rollback();
-
-    // 중복 키워드 에러 처리
-    if (error.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({
-        success: false,
-        message: '이미 등록된 키워드입니다.'
-      });
-    }
 
     console.error('키워드 등록 실패:', error);
     res.status(500).json({
@@ -518,38 +547,81 @@ router.get('/exclusion-keywords', async (req, res) => {
 
 /**
  * DELETE /api/exclusion-keywords/:id
- * 제외 키워드 삭제 (IS_ACTIVE를 0으로 변경)
+ * 제외 키워드 삭제 및 관련 공고 복원
  */
 router.delete('/exclusion-keywords/:id', async (req, res) => {
+  const connection = await req.db.getConnection();
+
   try {
     const { id } = req.params;
 
-    const query = `
-      UPDATE EXCLUSION_KEYWORDS
-      SET IS_ACTIVE = 0
-      WHERE EXCLUSION_ID = ?
-    `;
+    // 트랜잭션 시작
+    await connection.beginTransaction();
 
-    const [result] = await req.db.query(query, [id]);
+    // 1. 키워드 조회
+    const [keywordRows] = await connection.query(
+      'SELECT KEYWORD FROM EXCLUSION_KEYWORDS WHERE EXCLUSION_ID = ?',
+      [id]
+    );
 
-    if (result.affectedRows === 0) {
+    if (keywordRows.length === 0) {
+      await connection.rollback();
       return res.status(404).json({
         success: false,
         message: '제외 키워드를 찾을 수 없습니다.'
       });
     }
 
+    const keyword = keywordRows[0].KEYWORD;
+
+    // 2. 해당 키워드가 포함된 announcement_pre_processing 복원
+    const restoreQuery = `
+      UPDATE announcement_pre_processing
+      SET processing_status = '성공',
+          exclusion_keyword = NULL,
+          exclusion_reason = NULL
+      WHERE processing_status = '제외'
+        AND (
+          FIND_IN_SET(?, REPLACE(exclusion_keyword, ' ', '')) > 0
+          OR exclusion_keyword = ?
+        )
+    `;
+
+    const [restoreResult] = await connection.query(restoreQuery, [keyword, keyword]);
+    const restoredCount = restoreResult.affectedRows;
+
+    // 3. EXCLUSION_KEYWORDS의 IS_ACTIVE를 0으로 변경
+    const deleteQuery = `
+      UPDATE EXCLUSION_KEYWORDS
+      SET IS_ACTIVE = 0
+      WHERE EXCLUSION_ID = ?
+    `;
+
+    await connection.query(deleteQuery, [id]);
+
+    // 트랜잭션 커밋
+    await connection.commit();
+
     res.json({
       success: true,
-      message: '제외 키워드가 성공적으로 삭제되었습니다.'
+      message: '제외 키워드가 성공적으로 삭제되었습니다.',
+      data: {
+        keyword: keyword,
+        restoredCount: restoredCount
+      }
     });
   } catch (error) {
+    // 트랜잭션 롤백
+    await connection.rollback();
+
     console.error('키워드 삭제 실패:', error);
     res.status(500).json({
       success: false,
       message: '키워드 삭제 중 오류가 발생했습니다.',
       error: error.message
     });
+  } finally {
+    connection.release();
   }
 });
 
