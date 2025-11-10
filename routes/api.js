@@ -489,7 +489,10 @@ router.get('/exclusion-keywords', async (req, res) => {
         COUNT(app.id) as ACTUAL_EXCLUSION_COUNT
       FROM EXCLUSION_KEYWORDS ek
       LEFT JOIN announcement_pre_processing app
-        ON app.exclusion_keyword = ek.KEYWORD
+        ON (
+          FIND_IN_SET(ek.KEYWORD, REPLACE(app.exclusion_keyword, ' ', '')) > 0
+          OR app.exclusion_keyword = ek.KEYWORD
+        )
         AND app.processing_status = '제외'
       WHERE ek.IS_ACTIVE = 1
       GROUP BY ek.EXCLUSION_ID, ek.KEYWORD, ek.DESCRIPTION, ek.IS_ACTIVE, ek.EXCLUSION_COUNT, ek.CREATED_AT
@@ -571,11 +574,14 @@ router.get('/exclusion-keywords/:keyword/announcements', async (req, res) => {
         created_at
       FROM announcement_pre_processing
       WHERE processing_status = '제외'
-        AND exclusion_keyword = ?
+        AND (
+          FIND_IN_SET(?, REPLACE(exclusion_keyword, ' ', '')) > 0
+          OR exclusion_keyword = ?
+        )
       ORDER BY created_at DESC
     `;
 
-    const [rows] = await req.db.query(query, [keyword]);
+    const [rows] = await req.db.query(query, [keyword, keyword]);
 
     res.json({
       success: true,
