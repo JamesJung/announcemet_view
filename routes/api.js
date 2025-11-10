@@ -162,6 +162,116 @@ router.get('/announcements/search', async (req, res) => {
 });
 
 /**
+ * GET /api/announcements/excluded
+ * processing_status='제외'인 공고 목록 조회
+ */
+router.get('/announcements/excluded', async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 50,
+      title,
+      site_type,
+      created_from,
+      created_to,
+      announcement_from,
+      announcement_to
+    } = req.query;
+
+    const offset = (page - 1) * limit;
+
+    // WHERE 조건 동적 생성
+    const conditions = ['processing_status = ?'];
+    const params = ['제외'];
+
+    // 제목 검색
+    if (title && title.trim()) {
+      conditions.push('title LIKE ?');
+      params.push(`%${title.trim()}%`);
+    }
+
+    // site_type 필터
+    if (site_type && site_type.trim()) {
+      conditions.push('site_type = ?');
+      params.push(site_type.trim());
+    }
+
+    // 생성일 검색 (created_at)
+    if (created_from) {
+      conditions.push('DATE(created_at) >= ?');
+      params.push(created_from);
+    }
+    if (created_to) {
+      conditions.push('DATE(created_at) <= ?');
+      params.push(created_to);
+    }
+
+    // 공고일 검색 (announcement_date)
+    if (announcement_from) {
+      conditions.push('announcement_date >= ?');
+      params.push(announcement_from);
+    }
+    if (announcement_to) {
+      conditions.push('announcement_date <= ?');
+      params.push(announcement_to);
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    const query = `
+      SELECT
+        id,
+        site_type,
+        site_code,
+        title,
+        origin_url,
+        announcement_date,
+        exclusion_keyword,
+        exclusion_reason,
+        created_at
+      FROM announcement_pre_processing
+      WHERE ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    params.push(parseInt(limit), parseInt(offset));
+    const [rows] = await req.db.query(query, params);
+
+    // 전체 개수 조회
+    const countQuery = `SELECT COUNT(*) as total FROM announcement_pre_processing WHERE ${whereClause}`;
+    const countParams = params.slice(0, -2); // LIMIT, OFFSET 제외
+    const [countResult] = await req.db.query(countQuery, countParams);
+
+    res.json({
+      success: true,
+      data: rows,
+      pagination: {
+        currentPage: parseInt(page),
+        limit: parseInt(limit),
+        total: countResult[0].total,
+        totalPages: Math.ceil(countResult[0].total / limit)
+      },
+      filters: {
+        title,
+        site_type,
+        created_from,
+        created_to,
+        announcement_from,
+        announcement_to
+      }
+    });
+  } catch (error) {
+    console.error('제외 공고 목록 조회 실패:', error);
+    res.status(500).json({
+      success: false,
+      message: '제외 공고 목록 조회 중 오류가 발생했습니다.',
+      error: error.message
+    });
+  }
+});
+
+/**
  * GET /api/announcements/:id
  * 공고 상세 조회 (content_md, combined_content 포함)
  */
@@ -370,15 +480,20 @@ router.get('/exclusion-keywords', async (req, res) => {
   try {
     const query = `
       SELECT
-        EXCLUSION_ID,
-        KEYWORD,
-        DESCRIPTION,
-        IS_ACTIVE,
-        EXCLUSION_COUNT,
-        CREATED_AT
-      FROM EXCLUSION_KEYWORDS
-      WHERE IS_ACTIVE = 1
-      ORDER BY CREATED_AT DESC
+        ek.EXCLUSION_ID,
+        ek.KEYWORD,
+        ek.DESCRIPTION,
+        ek.IS_ACTIVE,
+        ek.EXCLUSION_COUNT,
+        ek.CREATED_AT,
+        COUNT(app.id) as ACTUAL_EXCLUSION_COUNT
+      FROM EXCLUSION_KEYWORDS ek
+      LEFT JOIN announcement_pre_processing app
+        ON app.exclusion_keyword = ek.KEYWORD
+        AND app.processing_status = '제외'
+      WHERE ek.IS_ACTIVE = 1
+      GROUP BY ek.EXCLUSION_ID, ek.KEYWORD, ek.DESCRIPTION, ek.IS_ACTIVE, ek.EXCLUSION_COUNT, ek.CREATED_AT
+      ORDER BY ek.CREATED_AT DESC
     `;
 
     const [rows] = await req.db.query(query);
@@ -430,6 +545,49 @@ router.delete('/exclusion-keywords/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       message: '키워드 삭제 중 오류가 발생했습니다.',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/exclusion-keywords/:keyword/announcements
+ * 특정 키워드로 제외된 공고 목록 조회
+ */
+router.get('/exclusion-keywords/:keyword/announcements', async (req, res) => {
+  try {
+    const { keyword } = req.params;
+
+    const query = `
+      SELECT
+        id,
+        site_type,
+        site_code,
+        title,
+        origin_url,
+        announcement_date,
+        exclusion_keyword,
+        exclusion_reason,
+        created_at
+      FROM announcement_pre_processing
+      WHERE processing_status = '제외'
+        AND exclusion_keyword = ?
+      ORDER BY created_at DESC
+    `;
+
+    const [rows] = await req.db.query(query, [keyword]);
+
+    res.json({
+      success: true,
+      data: rows,
+      count: rows.length,
+      keyword: keyword
+    });
+  } catch (error) {
+    console.error('키워드별 제외 공고 조회 실패:', error);
+    res.status(500).json({
+      success: false,
+      message: '키워드별 제외 공고 조회 중 오류가 발생했습니다.',
       error: error.message
     });
   }

@@ -18,6 +18,13 @@
       </div>
     </header>
 
+    <!-- 메뉴 네비게이션 -->
+    <nav class="main-nav">
+      <button id="navActive" class="nav-item active" data-view="active">진행 리스트 보기</button>
+      <button id="navExcluded" class="nav-item" data-view="excluded">제외 공고 리스트 보기</button>
+      <button id="navKeywords" class="nav-item" data-view="keywords">제외 키워드 보기</button>
+    </nav>
+
     <!-- 로딩 인디케이터 -->
     <div id="loadingIndicator" class="loading-indicator hidden">
       <div class="spinner"></div>
@@ -27,6 +34,8 @@
     <!-- 에러 메시지 -->
     <div id="errorMessage" class="error-message hidden"></div>
 
+    <!-- 진행/제외 공고 뷰 -->
+    <div id="announcementView">
     <!-- 검색 폼 -->
     <div class="search-form-container">
       <form id="searchForm" class="search-form">
@@ -107,6 +116,19 @@
     <div class="pagination" id="pagination">
       <!-- 페이지네이션 버튼이 여기에 동적으로 추가됩니다 -->
     </div>
+    </div>
+    <!-- announcementView 끝 -->
+
+    <!-- 제외 키워드 뷰 -->
+    <div id="keywordsView" class="hidden">
+      <div class="keywords-view-container">
+        <h2>제외 키워드 목록</h2>
+        <div class="keywords-grid" id="keywordsGrid">
+          <!-- 제외 키워드 카드들이 여기에 표시됩니다 -->
+        </div>
+      </div>
+    </div>
+    <!-- keywordsView 끝 -->
   </div>
 
   <!-- 제외 키워드 등록 모달 -->
@@ -236,6 +258,44 @@
 
       <div class="modal-footer">
         <button id="manageKeywordsCloseBtn" class="btn btn-secondary">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 키워드별 제외 공고 모달 -->
+  <div id="keywordDetailModal" class="modal hidden">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2 id="keywordDetailTitle">키워드별 제외 공고</h2>
+        <button class="modal-close" id="keywordDetailModalCloseBtn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="keyword-detail-info">
+          <p><strong>키워드:</strong> <span id="keywordDetailName"></span></p>
+          <p><strong>제외 건수:</strong> <span id="keywordDetailCount"></span></p>
+        </div>
+        <div class="table-container">
+          <table class="announcement-table">
+            <thead>
+              <tr>
+                <th>사이트 유형</th>
+                <th>사이트 코드</th>
+                <th>제목</th>
+                <th>원본 URL</th>
+                <th>공고일자</th>
+                <th>제외 사유</th>
+              </tr>
+            </thead>
+            <tbody id="keywordDetailTableBody">
+              <!-- 제외된 공고 목록이 여기에 표시됩니다 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="keywordDetailCloseBtn" class="btn btn-secondary">닫기</button>
       </div>
     </div>
   </div>

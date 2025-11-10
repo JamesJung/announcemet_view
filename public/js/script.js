@@ -4,6 +4,7 @@ const state = {
   totalPages: 1,
   selectedAnnouncement: null,
   allKeywords: [], // 제외 키워드 전체 목록
+  currentView: 'active', // 'active', 'excluded', 'keywords'
   filters: {
     title: '',
     site_type: '',
@@ -60,6 +61,22 @@ const elements = {
   keywordsList: document.getElementById('keywordsList'),
   keywordsCount: document.getElementById('keywordsCount'),
   keywordSearchInput: document.getElementById('keywordSearchInput'),
+  // 메뉴 네비게이션
+  navActive: document.getElementById('navActive'),
+  navExcluded: document.getElementById('navExcluded'),
+  navKeywords: document.getElementById('navKeywords'),
+  // 뷰 컨테이너
+  announcementView: document.getElementById('announcementView'),
+  keywordsView: document.getElementById('keywordsView'),
+  keywordsGrid: document.getElementById('keywordsGrid'),
+  // 키워드 상세 모달
+  keywordDetailModal: document.getElementById('keywordDetailModal'),
+  keywordDetailModalCloseBtn: document.getElementById('keywordDetailModalCloseBtn'),
+  keywordDetailCloseBtn: document.getElementById('keywordDetailCloseBtn'),
+  keywordDetailTitle: document.getElementById('keywordDetailTitle'),
+  keywordDetailName: document.getElementById('keywordDetailName'),
+  keywordDetailCount: document.getElementById('keywordDetailCount'),
+  keywordDetailTableBody: document.getElementById('keywordDetailTableBody'),
   // 토스트
   toast: document.getElementById('toast'),
   toastMessage: document.getElementById('toastMessage')
@@ -259,6 +276,66 @@ async function deleteExclusionKeyword(id) {
   }
 }
 
+async function fetchExcludedAnnouncements(page = 1, limit = 50, filters = {}) {
+  try {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString()
+    });
+
+    if (filters.title) params.append('title', filters.title);
+    if (filters.site_type) params.append('site_type', filters.site_type);
+
+    if (filters.date_type && filters.date_from && filters.date_to) {
+      if (filters.date_type === 'created') {
+        params.append('created_from', filters.date_from);
+        params.append('created_to', filters.date_to);
+      } else if (filters.date_type === 'announcement') {
+        params.append('announcement_from', filters.date_from);
+        params.append('announcement_to', filters.date_to);
+      }
+    }
+
+    const response = await fetch(`/api/announcements/excluded?${params.toString()}`);
+
+    if (!response.ok) {
+      throw new Error(`HTTP 오류: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.message || '제외 공고 목록 조회에 실패했습니다.');
+    }
+
+    return result;
+  } catch (error) {
+    console.error('제외 공고 목록 조회 실패:', error);
+    throw error;
+  }
+}
+
+async function fetchKeywordAnnouncements(keyword) {
+  try {
+    const response = await fetch(`/api/exclusion-keywords/${encodeURIComponent(keyword)}/announcements`);
+
+    if (!response.ok) {
+      throw new Error(`HTTP 오류: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.message || '키워드별 제외 공고 조회에 실패했습니다.');
+    }
+
+    return result;
+  } catch (error) {
+    console.error('키워드별 제외 공고 조회 실패:', error);
+    throw error;
+  }
+}
+
 // 테이블 렌더링
 function renderTable(data) {
   if (!data || data.length === 0) {
@@ -324,6 +401,47 @@ function renderTable(data) {
   });
 }
 
+// 제외 공고 테이블 렌더링
+function renderExcludedTable(data) {
+  if (!data || data.length === 0) {
+    elements.tableBody.innerHTML = `
+      <tr>
+        <td colspan="7" class="empty-message">데이터가 없습니다.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.tableBody.innerHTML = data.map(item => {
+    return `
+      <tr>
+        <td>${item.site_type || '-'}</td>
+        <td>${item.site_code || '-'}</td>
+        <td>${escapeHtml(item.title) || '-'}</td>
+        <td>
+          ${item.origin_url
+            ? `<a href="${escapeHtml(item.origin_url)}" target="_blank" class="url-link" rel="noopener noreferrer">링크 열기</a>`
+            : '-'
+          }
+        </td>
+        <td>${item.announcement_date || '-'}</td>
+        <td>
+          <button class="btn btn-detail detail-btn" data-id="${item.id}">상세</button>
+        </td>
+        <td>
+          <span class="keyword-badge">${escapeHtml(item.exclusion_keyword || '-')}</span><br/>
+          <small class="exclusion-reason">${escapeHtml(item.exclusion_reason || '-')}</small>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  // 상세 버튼 이벤트 리스너 추가
+  document.querySelectorAll('.detail-btn').forEach(btn => {
+    btn.addEventListener('click', handleDetailClick);
+  });
+}
+
 // HTML 이스케이프 함수
 function escapeHtml(text) {
   if (!text) return '';
@@ -386,14 +504,123 @@ function renderPagination(pagination) {
 async function loadAnnouncements(page = 1) {
   try {
     showLoading();
-    const result = await fetchAnnouncements(page, 50, state.filters);
+    let result;
 
-    renderTable(result.data);
-    renderPagination(result.pagination);
+    if (state.currentView === 'active') {
+      result = await fetchAnnouncements(page, 50, state.filters);
+      renderTable(result.data);
+    } else if (state.currentView === 'excluded') {
+      result = await fetchExcludedAnnouncements(page, 50, state.filters);
+      renderExcludedTable(result.data);
+    }
+
+    if (result) {
+      renderPagination(result.pagination);
+    }
 
     hideLoading();
   } catch (error) {
     showError(error.message);
+  }
+}
+
+// 제외 키워드 뷰 렌더링
+async function loadKeywordsView() {
+  try {
+    showLoading();
+    const result = await fetchExclusionKeywords();
+
+    if (!result.data || result.data.length === 0) {
+      elements.keywordsGrid.innerHTML = '<div class="empty-message">등록된 제외 키워드가 없습니다.</div>';
+      hideLoading();
+      return;
+    }
+
+    elements.keywordsGrid.innerHTML = result.data.map(item => {
+      const count = item.ACTUAL_EXCLUSION_COUNT || 0;
+      return `
+        <div class="keyword-card">
+          <div class="keyword-card-header">
+            <h3 class="keyword-card-title">${escapeHtml(item.KEYWORD)}</h3>
+            <span class="keyword-card-count">${count}건</span>
+          </div>
+          <div class="keyword-card-footer">
+            <small>등록일: ${item.CREATED_AT ? new Date(item.CREATED_AT).toLocaleDateString('ko-KR') : '-'}</small>
+            <button class="btn btn-detail keyword-detail-btn" data-keyword="${escapeHtml(item.KEYWORD)}" data-count="${count}">상세</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // 상세 버튼 이벤트 리스너
+    document.querySelectorAll('.keyword-detail-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const keyword = e.target.dataset.keyword;
+        const count = e.target.dataset.count;
+        openKeywordDetailModal(keyword, count);
+      });
+    });
+
+    hideLoading();
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+// 뷰 전환
+function switchView(view) {
+  state.currentView = view;
+
+  // 네비게이션 버튼 활성화 상태 변경
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.classList.remove('active');
+  });
+
+  if (view === 'active') {
+    elements.navActive.classList.add('active');
+    elements.announcementView.classList.remove('hidden');
+    elements.keywordsView.classList.add('hidden');
+    updateTableHeader(false);
+    loadAnnouncements(1);
+  } else if (view === 'excluded') {
+    elements.navExcluded.classList.add('active');
+    elements.announcementView.classList.remove('hidden');
+    elements.keywordsView.classList.add('hidden');
+    updateTableHeader(true);
+    loadAnnouncements(1);
+  } else if (view === 'keywords') {
+    elements.navKeywords.classList.add('active');
+    elements.announcementView.classList.add('hidden');
+    elements.keywordsView.classList.remove('hidden');
+    loadKeywordsView();
+  }
+}
+
+// 테이블 헤더 업데이트
+function updateTableHeader(isExcluded) {
+  const thead = elements.tableBody.closest('table').querySelector('thead tr');
+
+  if (isExcluded) {
+    thead.innerHTML = `
+      <th>사이트 유형</th>
+      <th>사이트 코드</th>
+      <th>제목</th>
+      <th>원본 URL</th>
+      <th>공고일자</th>
+      <th>상세</th>
+      <th>제외 키워드</th>
+    `;
+  } else {
+    thead.innerHTML = `
+      <th>사이트 유형</th>
+      <th>사이트 코드</th>
+      <th>제목</th>
+      <th>원본 URL</th>
+      <th>공고일자</th>
+      <th>상세</th>
+      <th>등록 상태</th>
+      <th>작업</th>
+    `;
   }
 }
 
@@ -685,6 +912,53 @@ function closeManageKeywordsModal() {
   elements.manageKeywordsModal.classList.add('hidden');
 }
 
+// 키워드 상세 모달 열기
+async function openKeywordDetailModal(keyword, count) {
+  try {
+    // 모달 정보 설정
+    elements.keywordDetailName.textContent = keyword;
+    elements.keywordDetailCount.textContent = count + '건';
+    elements.keywordDetailTableBody.innerHTML = '<tr><td colspan="6" class="empty-message">로딩 중...</td></tr>';
+    elements.keywordDetailModal.classList.remove('hidden');
+
+    // 키워드별 제외 공고 조회
+    const result = await fetchKeywordAnnouncements(keyword);
+
+    if (!result.data || result.data.length === 0) {
+      elements.keywordDetailTableBody.innerHTML = '<tr><td colspan="6" class="empty-message">제외된 공고가 없습니다.</td></tr>';
+      return;
+    }
+
+    // 테이블 렌더링
+    elements.keywordDetailTableBody.innerHTML = result.data.map(item => {
+      return `
+        <tr>
+          <td>${item.site_type || '-'}</td>
+          <td>${item.site_code || '-'}</td>
+          <td>${escapeHtml(item.title) || '-'}</td>
+          <td>
+            ${item.origin_url
+              ? `<a href="${escapeHtml(item.origin_url)}" target="_blank" class="url-link" rel="noopener noreferrer">링크 열기</a>`
+              : '-'
+            }
+          </td>
+          <td>${item.announcement_date || '-'}</td>
+          <td><small>${escapeHtml(item.exclusion_reason || '-')}</small></td>
+        </tr>
+      `;
+    }).join('');
+  } catch (error) {
+    console.error('키워드별 제외 공고 조회 실패:', error);
+    alert(error.message);
+    closeKeywordDetailModal();
+  }
+}
+
+// 키워드 상세 모달 닫기
+function closeKeywordDetailModal() {
+  elements.keywordDetailModal.classList.add('hidden');
+}
+
 // 제외 키워드 삭제 핸들러
 async function handleDeleteKeyword(event) {
   const id = event.target.dataset.id;
@@ -811,6 +1085,22 @@ function setupEventListeners() {
     }
   });
 
+  // 키워드 상세 모달 닫기
+  elements.keywordDetailModalCloseBtn.addEventListener('click', closeKeywordDetailModal);
+  elements.keywordDetailCloseBtn.addEventListener('click', closeKeywordDetailModal);
+
+  // 키워드 상세 모달 배경 클릭 시 닫기
+  elements.keywordDetailModal.addEventListener('click', (e) => {
+    if (e.target === elements.keywordDetailModal) {
+      closeKeywordDetailModal();
+    }
+  });
+
+  // 메뉴 네비게이션 버튼
+  elements.navActive.addEventListener('click', () => switchView('active'));
+  elements.navExcluded.addEventListener('click', () => switchView('excluded'));
+  elements.navKeywords.addEventListener('click', () => switchView('keywords'));
+
   // ESC 키로 모든 모달 닫기
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
@@ -825,6 +1115,9 @@ function setupEventListeners() {
       }
       if (!elements.manageKeywordsModal.classList.contains('hidden')) {
         closeManageKeywordsModal();
+      }
+      if (!elements.keywordDetailModal.classList.contains('hidden')) {
+        closeKeywordDetailModal();
       }
     }
   });
