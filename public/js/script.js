@@ -69,6 +69,9 @@ const elements = {
   announcementView: document.getElementById('announcementView'),
   keywordsView: document.getElementById('keywordsView'),
   keywordsGrid: document.getElementById('keywordsGrid'),
+  // 검색 결과 표시
+  searchResultInfo: document.getElementById('searchResultInfo'),
+  searchResultText: document.getElementById('searchResultText'),
   // 키워드 상세 모달
   keywordDetailModal: document.getElementById('keywordDetailModal'),
   keywordDetailModalCloseBtn: document.getElementById('keywordDetailModalCloseBtn'),
@@ -516,11 +519,51 @@ async function loadAnnouncements(page = 1) {
 
     if (result) {
       renderPagination(result.pagination);
+      updateSearchResultInfo(result.pagination);
     }
 
     hideLoading();
   } catch (error) {
     showError(error.message);
+  }
+}
+
+// 검색 결과 정보 업데이트
+function updateSearchResultInfo(pagination) {
+  if (!pagination) {
+    elements.searchResultInfo.classList.add('hidden');
+    return;
+  }
+
+  // 검색 조건이 있는지 확인
+  const hasFilters = state.filters.title ||
+                     state.filters.site_type ||
+                     (state.filters.date_type && state.filters.date_from && state.filters.date_to);
+
+  if (hasFilters) {
+    // 검색 조건이 있는 경우
+    const viewName = state.currentView === 'active' ? '진행 공고' : '제외 공고';
+    const filterParts = [];
+
+    if (state.filters.title) {
+      filterParts.push(`제목: "${state.filters.title}"`);
+    }
+    if (state.filters.site_type) {
+      filterParts.push(`사이트: ${state.filters.site_type}`);
+    }
+    if (state.filters.date_type && state.filters.date_from && state.filters.date_to) {
+      const dateTypeName = state.filters.date_type === 'created' ? '생성일' : '공고일';
+      filterParts.push(`${dateTypeName}: ${state.filters.date_from} ~ ${state.filters.date_to}`);
+    }
+
+    elements.searchResultText.innerHTML = `
+      <strong>${viewName} 검색 결과:</strong> 총 <strong>${pagination.total.toLocaleString()}건</strong>
+      <span class="filter-info">(${filterParts.join(', ')})</span>
+    `;
+    elements.searchResultInfo.classList.remove('hidden');
+  } else {
+    // 검색 조건이 없는 경우 숨김
+    elements.searchResultInfo.classList.add('hidden');
   }
 }
 

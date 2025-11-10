@@ -215,6 +215,30 @@ body {
   align-items: flex-end;
 }
 
+/* 검색 결과 표시 */
+.search-result-info {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 16px 24px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
+}
+
+.search-result-info strong {
+  font-weight: 600;
+}
+
+.search-result-info .filter-info {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 14px;
+  opacity: 0.95;
+  padding: 4px 12px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+}
+
 /* 유틸리티 */
 .hidden {
   display: none !important;
