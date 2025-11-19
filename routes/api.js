@@ -671,4 +671,102 @@ router.get('/exclusion-keywords/:keyword/announcements', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/health-checks
+ * health_check_log 조회 (날짜 검색 기능 포함)
+ */
+router.get('/health-checks', async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 50,
+      date_from,
+      date_to,
+      site_code,
+      status_code
+    } = req.query;
+
+    const offset = (page - 1) * limit;
+
+    // WHERE 조건 동적 생성
+    const conditions = [];
+    const params = [];
+
+    // 날짜 검색 (check_date)
+    if (date_from) {
+      conditions.push('check_date >= ?');
+      params.push(date_from);
+    }
+    if (date_to) {
+      conditions.push('check_date <= ?');
+      params.push(date_to);
+    }
+
+    // site_code 필터
+    if (site_code && site_code.trim()) {
+      conditions.push('site_code LIKE ?');
+      params.push(`%${site_code.trim()}%`);
+    }
+
+    // status_code 필터
+    if (status_code && status_code.trim()) {
+      conditions.push('status_code = ?');
+      params.push(status_code.trim());
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT
+        id,
+        check_date,
+        site_code,
+        site_url,
+        status_code,
+        error_type,
+        error_message,
+        response_time,
+        redirect_url,
+        redirect_count,
+        created_at
+      FROM health_check_log
+      ${whereClause}
+      ORDER BY check_date DESC, created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    params.push(parseInt(limit), parseInt(offset));
+    const [rows] = await req.db.query(query, params);
+
+    // 전체 개수 조회
+    const countQuery = `SELECT COUNT(*) as total FROM health_check_log ${whereClause}`;
+    const countParams = params.slice(0, -2); // LIMIT, OFFSET 제외
+    const [countResult] = await req.db.query(countQuery, countParams);
+
+    res.json({
+      success: true,
+      data: rows,
+      pagination: {
+        currentPage: parseInt(page),
+        limit: parseInt(limit),
+        total: countResult[0].total,
+        totalPages: Math.ceil(countResult[0].total / limit)
+      },
+      filters: {
+        date_from,
+        date_to,
+        site_code,
+        status_code
+      }
+    });
+  } catch (error) {
+    console.error('Health Check 로그 조회 실패:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Health Check 로그 조회 중 오류가 발생했습니다.',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
