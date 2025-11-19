@@ -401,7 +401,8 @@ router.post('/exclusion-keywords', async (req, res) => {
       const reactivateQuery = `
         UPDATE EXCLUSION_KEYWORDS
         SET IS_ACTIVE = 1,
-            DESCRIPTION = ?
+            DESCRIPTION = ?,
+            EXCLUSION_COUNT = 0
         WHERE EXCLUSION_ID = ?
       `;
 
@@ -472,6 +473,14 @@ router.post('/exclusion-keywords', async (req, res) => {
       deactivatedCount = updateSubventionResult.affectedRows;
     }
 
+    // 5. EXCLUSION_COUNT 업데이트
+    const updateCountQuery = `
+      UPDATE EXCLUSION_KEYWORDS
+      SET EXCLUSION_COUNT = ?
+      WHERE EXCLUSION_ID = ?
+    `;
+    await connection.query(updateCountQuery, [updatedAnnouncementCount, exclusionId]);
+
     // 트랜잭션 커밋
     await connection.commit();
 
@@ -507,25 +516,19 @@ router.post('/exclusion-keywords', async (req, res) => {
  */
 router.get('/exclusion-keywords', async (req, res) => {
   try {
+    // 단순 쿼리: EXCLUSION_COUNT만 사용 (성능 최적화)
     const query = `
       SELECT
-        ek.EXCLUSION_ID,
-        ek.KEYWORD,
-        ek.DESCRIPTION,
-        ek.IS_ACTIVE,
-        ek.EXCLUSION_COUNT,
-        ek.CREATED_AT,
-        COUNT(app.id) as ACTUAL_EXCLUSION_COUNT
-      FROM EXCLUSION_KEYWORDS ek
-      LEFT JOIN announcement_pre_processing app
-        ON (
-          FIND_IN_SET(ek.KEYWORD, REPLACE(app.exclusion_keyword, ' ', '')) > 0
-          OR app.exclusion_keyword = ek.KEYWORD
-        )
-        AND app.processing_status = '제외'
-      WHERE ek.IS_ACTIVE = 1
-      GROUP BY ek.EXCLUSION_ID, ek.KEYWORD, ek.DESCRIPTION, ek.IS_ACTIVE, ek.EXCLUSION_COUNT, ek.CREATED_AT
-      ORDER BY ek.CREATED_AT DESC
+        EXCLUSION_ID,
+        KEYWORD,
+        DESCRIPTION,
+        IS_ACTIVE,
+        EXCLUSION_COUNT,
+        CREATED_AT,
+        EXCLUSION_COUNT as ACTUAL_EXCLUSION_COUNT
+      FROM EXCLUSION_KEYWORDS
+      WHERE IS_ACTIVE = 1
+      ORDER BY CREATED_AT DESC
     `;
 
     const [rows] = await req.db.query(query);
@@ -581,19 +584,17 @@ router.delete('/exclusion-keywords/:id', async (req, res) => {
           exclusion_keyword = NULL,
           exclusion_reason = NULL
       WHERE processing_status = '제외'
-        AND (
-          FIND_IN_SET(?, REPLACE(exclusion_keyword, ' ', '')) > 0
-          OR exclusion_keyword = ?
-        )
+        AND exclusion_keyword = ?
     `;
 
-    const [restoreResult] = await connection.query(restoreQuery, [keyword, keyword]);
+    const [restoreResult] = await connection.query(restoreQuery, [keyword]);
     const restoredCount = restoreResult.affectedRows;
 
-    // 3. EXCLUSION_KEYWORDS의 IS_ACTIVE를 0으로 변경
+    // 3. EXCLUSION_KEYWORDS의 IS_ACTIVE를 0으로 변경하고 EXCLUSION_COUNT를 0으로 초기화
     const deleteQuery = `
       UPDATE EXCLUSION_KEYWORDS
-      SET IS_ACTIVE = 0
+      SET IS_ACTIVE = 0,
+          EXCLUSION_COUNT = 0
       WHERE EXCLUSION_ID = ?
     `;
 
@@ -622,6 +623,51 @@ router.delete('/exclusion-keywords/:id', async (req, res) => {
     });
   } finally {
     connection.release();
+  }
+});
+
+/**
+ * POST /api/exclusion-keywords/sync-counts
+ * 모든 제외 키워드의 EXCLUSION_COUNT 동기화 (최적화된 버전)
+ */
+router.post('/exclusion-keywords/sync-counts', async (req, res) => {
+  try {
+    // 1. 먼저 모든 EXCLUSION_COUNT를 0으로 초기화
+    await req.db.query(
+      'UPDATE EXCLUSION_KEYWORDS SET EXCLUSION_COUNT = 0 WHERE IS_ACTIVE = 1'
+    );
+
+    // 2. 실제 제외된 공고 수를 한 번의 쿼리로 집계하여 업데이트
+    const updateQuery = `
+      UPDATE EXCLUSION_KEYWORDS ek
+      INNER JOIN (
+        SELECT
+          exclusion_keyword,
+          COUNT(*) as count
+        FROM announcement_pre_processing
+        WHERE processing_status = '제외'
+          AND exclusion_keyword IS NOT NULL
+          AND exclusion_keyword != ''
+        GROUP BY exclusion_keyword
+      ) app ON ek.KEYWORD = app.exclusion_keyword
+      SET ek.EXCLUSION_COUNT = app.count
+      WHERE ek.IS_ACTIVE = 1
+    `;
+
+    const [result] = await req.db.query(updateQuery);
+
+    res.json({
+      success: true,
+      message: `EXCLUSION_COUNT가 업데이트되었습니다.`,
+      affectedRows: result.affectedRows
+    });
+  } catch (error) {
+    console.error('EXCLUSION_COUNT 동기화 실패:', error);
+    res.status(500).json({
+      success: false,
+      message: 'EXCLUSION_COUNT 동기화 중 오류가 발생했습니다.',
+      error: error.message
+    });
   }
 });
 

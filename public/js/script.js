@@ -4,13 +4,19 @@ const state = {
   totalPages: 1,
   selectedAnnouncement: null,
   allKeywords: [], // 제외 키워드 전체 목록
-  currentView: 'active', // 'active', 'excluded', 'keywords'
+  currentView: 'active', // 'active', 'excluded', 'keywords', 'health'
   filters: {
     title: '',
     site_type: '',
     date_type: '',
     date_from: '',
     date_to: ''
+  },
+  healthFilters: {
+    date_from: '',
+    date_to: '',
+    site_code: '',
+    status_code: ''
   }
 };
 
@@ -65,10 +71,12 @@ const elements = {
   navActive: document.getElementById('navActive'),
   navExcluded: document.getElementById('navExcluded'),
   navKeywords: document.getElementById('navKeywords'),
+  navHealth: document.getElementById('navHealth'),
   // 뷰 컨테이너
   announcementView: document.getElementById('announcementView'),
   keywordsView: document.getElementById('keywordsView'),
   keywordsGrid: document.getElementById('keywordsGrid'),
+  healthView: document.getElementById('healthView'),
   // 검색 결과 표시
   searchResultInfo: document.getElementById('searchResultInfo'),
   searchResultText: document.getElementById('searchResultText'),
@@ -82,7 +90,18 @@ const elements = {
   keywordDetailTableBody: document.getElementById('keywordDetailTableBody'),
   // 토스트
   toast: document.getElementById('toast'),
-  toastMessage: document.getElementById('toastMessage')
+  toastMessage: document.getElementById('toastMessage'),
+  // Health Check
+  healthSearchForm: document.getElementById('healthSearchForm'),
+  healthDateFrom: document.getElementById('healthDateFrom'),
+  healthDateTo: document.getElementById('healthDateTo'),
+  healthSiteCode: document.getElementById('healthSiteCode'),
+  healthStatusCode: document.getElementById('healthStatusCode'),
+  healthResetBtn: document.getElementById('healthResetBtn'),
+  healthTableBody: document.getElementById('healthTableBody'),
+  healthPagination: document.getElementById('healthPagination'),
+  healthSearchResultInfo: document.getElementById('healthSearchResultInfo'),
+  healthSearchResultText: document.getElementById('healthSearchResultText')
 };
 
 // 유틸리티 함수
@@ -339,6 +358,37 @@ async function fetchKeywordAnnouncements(keyword) {
   }
 }
 
+async function fetchHealthChecks(page = 1, limit = 50, filters = {}) {
+  try {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString()
+    });
+
+    if (filters.date_from) params.append('date_from', filters.date_from);
+    if (filters.date_to) params.append('date_to', filters.date_to);
+    if (filters.site_code) params.append('site_code', filters.site_code);
+    if (filters.status_code) params.append('status_code', filters.status_code);
+
+    const response = await fetch(`/api/health-checks?${params.toString()}`);
+
+    if (!response.ok) {
+      throw new Error(`HTTP 오류: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.message || 'Health Check 로그 조회에 실패했습니다.');
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Health Check 로그 조회 실패:', error);
+    throw error;
+  }
+}
+
 // 테이블 렌더링
 function renderTable(data) {
   if (!data || data.length === 0) {
@@ -445,6 +495,43 @@ function renderExcludedTable(data) {
   });
 }
 
+// Health Check 테이블 렌더링
+function renderHealthTable(data) {
+  if (!data || data.length === 0) {
+    elements.healthTableBody.innerHTML = `
+      <tr>
+        <td colspan="8" class="empty-message">데이터가 없습니다.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.healthTableBody.innerHTML = data.map(item => {
+    const statusClass = item.status_code === 200 ? 'badge-registered' : 'badge-pending';
+    const redirectInfo = item.redirect_url
+      ? `<a href="${escapeHtml(item.redirect_url)}" target="_blank" class="url-link" rel="noopener noreferrer">${item.redirect_count || 0}회</a>`
+      : '-';
+
+    return `
+      <tr>
+        <td>${item.check_date || '-'}</td>
+        <td>${item.site_code || '-'}</td>
+        <td>
+          ${item.site_url
+            ? `<a href="${escapeHtml(item.site_url)}" target="_blank" class="url-link" rel="noopener noreferrer">링크</a>`
+            : '-'
+          }
+        </td>
+        <td><span class="badge ${statusClass}">${item.status_code || '-'}</span></td>
+        <td>${escapeHtml(item.error_type) || '-'}</td>
+        <td>${escapeHtml(item.error_message) || '-'}</td>
+        <td>${item.response_time ? item.response_time + 'ms' : '-'}</td>
+        <td>${redirectInfo}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
 // HTML 이스케이프 함수
 function escapeHtml(text) {
   if (!text) return '';
@@ -503,6 +590,47 @@ function renderPagination(pagination) {
   });
 }
 
+// Health Check 페이지네이션 렌더링
+function renderHealthPagination(pagination) {
+  if (!pagination || pagination.totalPages <= 1) {
+    elements.healthPagination.innerHTML = '';
+    return;
+  }
+
+  const { currentPage, totalPages, total } = pagination;
+  state.currentPage = currentPage;
+  state.totalPages = totalPages;
+
+  let html = '<button id="healthFirstPage" ' + (currentPage === 1 ? 'disabled' : '') + '>처음</button>';
+  html += '<button id="healthPrevPage" ' + (currentPage === 1 ? 'disabled' : '') + '>이전</button>';
+
+  const startPage = Math.max(1, currentPage - 2);
+  const endPage = Math.min(totalPages, currentPage + 2);
+
+  for (let i = startPage; i <= endPage; i++) {
+    html += `<button class="health-page-number ${i === currentPage ? 'active' : ''}" data-page="${i}">${i}</button>`;
+  }
+
+  html += '<button id="healthNextPage" ' + (currentPage === totalPages ? 'disabled' : '') + '>다음</button>';
+  html += '<button id="healthLastPage" ' + (currentPage === totalPages ? 'disabled' : '') + '>마지막</button>';
+  html += `<span class="page-info">${currentPage} / ${totalPages} 페이지</span>`;
+
+  elements.healthPagination.innerHTML = html;
+
+  // 페이지네이션 이벤트 리스너
+  document.getElementById('healthFirstPage')?.addEventListener('click', () => loadHealthChecks(1));
+  document.getElementById('healthPrevPage')?.addEventListener('click', () => loadHealthChecks(currentPage - 1));
+  document.getElementById('healthNextPage')?.addEventListener('click', () => loadHealthChecks(currentPage + 1));
+  document.getElementById('healthLastPage')?.addEventListener('click', () => loadHealthChecks(totalPages));
+
+  document.querySelectorAll('.health-page-number').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const page = parseInt(e.target.dataset.page);
+      loadHealthChecks(page);
+    });
+  });
+}
+
 // 공고 목록 로드
 async function loadAnnouncements(page = 1) {
   try {
@@ -521,6 +649,22 @@ async function loadAnnouncements(page = 1) {
       renderPagination(result.pagination);
       updateSearchResultInfo(result.pagination);
     }
+
+    hideLoading();
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+// Health Check 목록 로드
+async function loadHealthChecks(page = 1) {
+  try {
+    showLoading();
+    const result = await fetchHealthChecks(page, 50, state.healthFilters);
+
+    renderHealthTable(result.data);
+    renderHealthPagination(result.pagination);
+    updateHealthSearchResultInfo(result.pagination);
 
     hideLoading();
   } catch (error) {
@@ -564,6 +708,43 @@ function updateSearchResultInfo(pagination) {
   } else {
     // 검색 조건이 없는 경우 숨김
     elements.searchResultInfo.classList.add('hidden');
+  }
+}
+
+// Health Check 검색 결과 정보 업데이트
+function updateHealthSearchResultInfo(pagination) {
+  if (!pagination) {
+    elements.healthSearchResultInfo.classList.add('hidden');
+    return;
+  }
+
+  const hasFilters = state.healthFilters.date_from ||
+                     state.healthFilters.date_to ||
+                     state.healthFilters.site_code ||
+                     state.healthFilters.status_code;
+
+  if (hasFilters) {
+    const filterParts = [];
+
+    if (state.healthFilters.date_from || state.healthFilters.date_to) {
+      const from = state.healthFilters.date_from || '시작';
+      const to = state.healthFilters.date_to || '종료';
+      filterParts.push(`날짜: ${from} ~ ${to}`);
+    }
+    if (state.healthFilters.site_code) {
+      filterParts.push(`사이트 코드: "${state.healthFilters.site_code}"`);
+    }
+    if (state.healthFilters.status_code) {
+      filterParts.push(`상태 코드: ${state.healthFilters.status_code}`);
+    }
+
+    elements.healthSearchResultText.innerHTML = `
+      <strong>Health Check 검색 결과:</strong> 총 <strong>${pagination.total.toLocaleString()}건</strong>
+      <span class="filter-info">(${filterParts.join(', ')})</span>
+    `;
+    elements.healthSearchResultInfo.classList.remove('hidden');
+  } else {
+    elements.healthSearchResultInfo.classList.add('hidden');
   }
 }
 
@@ -631,19 +812,28 @@ function switchView(view) {
     elements.navActive.classList.add('active');
     elements.announcementView.classList.remove('hidden');
     elements.keywordsView.classList.add('hidden');
+    elements.healthView.classList.add('hidden');
     updateTableHeader(false);
     loadAnnouncements(1);
   } else if (view === 'excluded') {
     elements.navExcluded.classList.add('active');
     elements.announcementView.classList.remove('hidden');
     elements.keywordsView.classList.add('hidden');
+    elements.healthView.classList.add('hidden');
     updateTableHeader(true);
     loadAnnouncements(1);
   } else if (view === 'keywords') {
     elements.navKeywords.classList.add('active');
     elements.announcementView.classList.add('hidden');
     elements.keywordsView.classList.remove('hidden');
+    elements.healthView.classList.add('hidden');
     loadKeywordsView();
+  } else if (view === 'health') {
+    elements.navHealth.classList.add('active');
+    elements.announcementView.classList.add('hidden');
+    elements.keywordsView.classList.add('hidden');
+    elements.healthView.classList.remove('hidden');
+    loadHealthChecks(1);
   }
 }
 
@@ -1182,6 +1372,7 @@ function setupEventListeners() {
   elements.navActive.addEventListener('click', () => switchView('active'));
   elements.navExcluded.addEventListener('click', () => switchView('excluded'));
   elements.navKeywords.addEventListener('click', () => switchView('keywords'));
+  elements.navHealth.addEventListener('click', () => switchView('health'));
 
   // ESC 키로 모든 모달 닫기
   document.addEventListener('keydown', (e) => {
@@ -1219,6 +1410,43 @@ function setupEventListeners() {
       handleSearch();
     }
   });
+
+  // Health Check 검색 폼
+  elements.healthSearchForm.addEventListener('submit', handleHealthSearchSubmit);
+  elements.healthResetBtn.addEventListener('click', handleHealthReset);
+}
+
+// Health Check 검색 폼 제출 핸들러
+function handleHealthSearchSubmit(event) {
+  event.preventDefault();
+
+  state.healthFilters = {
+    date_from: elements.healthDateFrom.value,
+    date_to: elements.healthDateTo.value,
+    site_code: elements.healthSiteCode.value.trim(),
+    status_code: elements.healthStatusCode.value
+  };
+
+  state.currentPage = 1;
+  loadHealthChecks(1);
+}
+
+// Health Check 검색 조건 초기화 핸들러
+function handleHealthReset() {
+  elements.healthDateFrom.value = '';
+  elements.healthDateTo.value = '';
+  elements.healthSiteCode.value = '';
+  elements.healthStatusCode.value = '';
+
+  state.healthFilters = {
+    date_from: '',
+    date_to: '',
+    site_code: '',
+    status_code: ''
+  };
+
+  state.currentPage = 1;
+  loadHealthChecks(1);
 }
 
 // 초기화
